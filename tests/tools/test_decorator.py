@@ -12,7 +12,6 @@ from openminion.modules.tool.framework import (
 )
 from openminion.modules.tool.registry import ToolRegistry
 from openminion.tools import tool
-from openminion.tools.decorator import _MODEL_VALIDATE_ACCEPTS_BY_NAME
 
 
 def test_decorator_bare_form_preserves_callability() -> None:
@@ -410,13 +409,7 @@ def test_decorator_handler_accepts_nested_alias_model_mappings() -> None:
     assert report.tool_decl.handler(validated) == "7:none:all"
     assert report.tool_decl.handler(validated.model_dump(by_alias=True)) == "7:none:all"
     # The runtime passes the canonical (field-name) dump of the args model.
-    # Pydantic before 2.11 cannot validate a nested model's field names
-    # without changing that model's own configuration (#436 review).
-    if _MODEL_VALIDATE_ACCEPTS_BY_NAME:
-        assert report.tool_decl.handler(validated.model_dump()) == "7:none:all"
-    else:
-        with pytest.raises(ValidationError):
-            report.tool_decl.handler(validated.model_dump())
+    assert report.tool_decl.handler(validated.model_dump()) == "7:none:all"
     # Validation, extra-key and default controls on the nested model.
     with pytest.raises(ValidationError):
         report.tool_decl.handler({"inner": {"external": -1}})

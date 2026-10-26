@@ -3182,7 +3182,7 @@ requires-dist = [
     { name = "prompt-toolkit", specifier = ">=3,<4" },
     { name = "psutil", specifier = ">=5" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.1" },
-    { name = "pydantic", specifier = ">=2" },
+    { name = "pydantic", specifier = ">=2.11" },
     { name = "pyfiglet", marker = "extra == 'animations'", specifier = ">=1.0,<2" },
     { name = "pyfiglet", marker = "extra == 'dev'", specifier = ">=1.0,<2" },
     { name = "pyte", marker = "extra == 'dev'", specifier = ">=0.8" },

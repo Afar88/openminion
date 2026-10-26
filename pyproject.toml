@@ -34,7 +34,9 @@ dependencies = [
   # runtime surfaces that depend on the released SophiaGraph package.
   "sophiagraph>=0.0.12",
   "psutil>=5",
-  "pydantic>=2",
+  # ``model_validate(by_alias=..., by_name=...)`` (2.11) lets the @tool
+  # handler accept canonical field-name mappings for nested aliased models.
+  "pydantic>=2.11",
   # The interactive terminal imports prompt-toolkit at runtime, so the
   # canonical bare `openminion` experience requires it in core.
   "prompt-toolkit>=3,<4",

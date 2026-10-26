@@ -31,9 +31,9 @@ This file tracks package-facing release notes for `openminion`.
   validates mappings with the tool's args model, accepting both declared
   aliases and canonical field names, and passes the validated field values;
   defaults and `Annotated` constraints apply and invalid mappings raise
-  `ValidationError`. With Pydantic before 2.11, a nested model that declares
-  aliases is accepted by alias only. The shared built-in tool mapping
-  contract is unchanged (Refs #435).
+  `ValidationError`. The package now requires `pydantic>=2.11`, whose
+  per-call `by_name` validation the handler uses. The shared built-in tool
+  mapping contract is unchanged (Refs #435).
 - Let `memctl inspect` run without `--scope`, or with an empty one, as the
   command intends: it inspects with the default inspection identifiers and
   reports stats for every scope, instead of exiting with a traceback from the
