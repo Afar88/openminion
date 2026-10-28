@@ -32,6 +32,7 @@ from openminion.modules.task.run import (
     resolve_invocation_terminal,
     resolve_thread_lifecycle,
 )
+from tests._failed_start_scenarios import assert_released, automatic_gc_off
 from tests._room_participant_scenarios import (
     COUNTED_JOIN_SEQ_SQL,
     LEGACY_ORDER,
@@ -1308,3 +1309,79 @@ def test_postgres_runtime_storage_wrapper_has_no_sqlite_storage_handle(
 
         assert database.connections() == 0
     assert not state_db(root).exists()
+
+
+class _InjectedStartFailure(RuntimeError):
+    """The error a failed-start case injects into one step of the start."""
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "case",
+    [
+        "started-then-closed",
+        "sessions-table-exists",
+        "stack-gateway-after-agent",
+        "construction-post-init",
+        "after-construction-runtime-manager",
+    ],
+)
+def test_postgres_failed_start_closes_the_owned_engine_and_emitter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    """A failed start closes the record store's engine and stops its emitter (#447).
+
+    Automatic garbage collection is off, so the checks right after the
+    exception see what the owners closed, not what a collection freed.
+    """
+    from openminion.api import runtime as runtime_module
+    from openminion.api.core import bootstrap
+    from openminion.modules.storage.engine import StorageEngine
+
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    engine_closes: list[StorageEngine] = []
+    engine_close = StorageEngine.close
+
+    def counted_close(self: StorageEngine) -> None:
+        engine_closes.append(self)
+        engine_close(self)
+
+    monkeypatch.setattr(StorageEngine, "close", counted_close)
+    injected = _InjectedStartFailure(case)
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise injected
+
+    if case == "stack-gateway-after-agent":
+        monkeypatch.setattr(bootstrap, "build_gateway_service", fail)
+    elif case == "construction-post-init":
+        monkeypatch.setattr(runtime_module, "initialize_runtime_components", fail)
+    elif case == "after-construction-runtime-manager":
+        monkeypatch.setattr(bootstrap, "build_runtime_manager", fail)
+    root = tmp_path / "root"
+    with _runtime_database("om447_start") as database, automatic_gc_off():
+        if case == "sessions-table-exists":
+            setup = sqlalchemy.create_engine(database.url, future=True)
+            with setup.begin() as conn:
+                conn.execute(
+                    sqlalchemy.text(
+                        "CREATE TABLE sessions (session_id TEXT PRIMARY KEY)"
+                    )
+                )
+            setup.dispose()
+        config_path = write_runtime_config(root, postgres_url=database.url)
+        threads = set(threading.enumerate())
+
+        if case == "started-then-closed":
+            start_runtime(config_path).close()
+        elif case == "sessions-table-exists":
+            with pytest.raises(MigrationError, match="sessions"):
+                start_runtime(config_path)
+        else:
+            with pytest.raises(_InjectedStartFailure) as excinfo:
+                start_runtime(config_path)
+            assert excinfo.value is injected
+
+        assert len(engine_closes) == 1
+        assert database.connections() == 0
+        assert_released(root, threads)
