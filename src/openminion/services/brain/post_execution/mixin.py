@@ -211,13 +211,15 @@ class BrainBridgeTurnMixin:
             return False
         capture = capture_run_kwargs(metadata)
         service_port = AgentServiceTurnFlowAdapter(self)
-        return memory_capture_allowed(
-            capture["runtime_session_id"] or session_id,
-            capture["root_turn_id"] or "",
-            channel=str(message.channel or "brain"),
-            policy=service_port.security_policy,
-            tools=service_port.tools,
-            agent_id=service_port.identity_agent_id,
+        return bool(
+            memory_capture_allowed(
+                capture["runtime_session_id"] or session_id,
+                capture["root_turn_id"] or "",
+                channel=str(message.channel or "brain"),
+                policy=service_port.security_policy,
+                tools=service_port.tools,
+                agent_id=service_port.identity_agent_id,
+            )
         )
 
     def _refresh_prep_identity_state(self) -> None:
