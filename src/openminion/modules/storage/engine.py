@@ -383,10 +383,9 @@ class StorageEngine:
                 ),
             )
         except BaseException:
-            # No engine owns these backends yet: close them as close() does
-            # and keep the error.
-            with suppress(Exception):
-                _close_backends(vector_store, record)
+            # No engine owns these backends yet: close them as close() does,
+            # each one even when an earlier close fails, and keep the error.
+            _close_backends(vector_store, record, suppress_errors=True)
             raise
 
     @classmethod
@@ -514,7 +513,7 @@ class StorageEngine:
         return normalize_namespace(namespace)
 
 
-def _close_backends(*backends: Any) -> None:
+def _close_backends(*backends: Any, suppress_errors: bool = False) -> None:
     closed_ids: set[int] = set()
     for backend in backends:
         if backend is None:
@@ -524,5 +523,10 @@ def _close_backends(*backends: Any) -> None:
             continue
         closed_ids.add(backend_id)
         close_fn = getattr(backend, "close", None)
-        if callable(close_fn):
+        if not callable(close_fn):
+            continue
+        if suppress_errors:
+            with suppress(Exception):
+                close_fn()
+        else:
             close_fn()
