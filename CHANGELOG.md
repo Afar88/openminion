@@ -17,6 +17,18 @@ This file tracks package-facing release notes for `openminion`.
   through `runtime.sessions` on either backend. A SQLite record store without
   a connection still fails the start with the same error. What is covered on
   PostgreSQL is listed in `docs/runtime-database-upgrades.md` (Refs #437).
+- Close what a failed `APIRuntime` start built. When a start step raised,
+  what the start had already built stayed open: the runtime storage (its
+  SQLite connection, or the PostgreSQL connection pool and its pool-health
+  emitter thread), the telemetry store, the module databases and the
+  services. The caller got the original error, but those objects stayed open
+  until a garbage collection freed them, and the PostgreSQL pool and emitter
+  not even then. Each step of the start now closes what it built with the
+  existing closes and re-raises the original error, also when one of those
+  closes fails. Once the runtime object exists, a later failure closes it
+  with `APIRuntime.close()`, which also stops a runtime manager that already
+  started. A successful start hands the same objects to the runtime as
+  before (Refs #447).
 
 ## Current package line - 2026-10-27
 
