@@ -17,6 +17,13 @@ This file tracks package-facing release notes for `openminion`.
   through `runtime.sessions` on either backend. A SQLite record store without
   a connection still fails the start with the same error. What is covered on
   PostgreSQL is listed in `docs/runtime-database-upgrades.md` (Refs #437).
+- Report the migration error in `openminion storage migrate` entries. When a
+  module's `MigrationReport` failed, its entry had status `error` but no
+  message, and the text output printed only `FAIL <module>`. The entry now
+  carries the report's `error`, and the text line prints it after the module
+  id. The `applied` list is left out: it read a field that `MigrationReport`
+  does not have, so it was always empty. Exit status is unchanged (Refs
+  #446).
 - Close what a failed `APIRuntime` start built. When a start step raised,
   what the start had already built stayed open: the runtime storage (its
   SQLite connection, or the PostgreSQL connection pool and its pool-health
