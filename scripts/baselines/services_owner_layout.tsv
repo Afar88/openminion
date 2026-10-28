@@ -72,7 +72,11 @@ scope	max_python_files	max_loc
 # Issue 456 (2026-10-28) carries task-owned consolidation context through the
 # existing cron, manager, ingress, and gateway owners while keeping caller
 # metadata untrusted and pausing unverifiable legacy jobs (+131 LOC; file count unchanged).
-services	208	41983
+# Issue 448 (2026-10-28) asks the existing memory.write capture authorization
+# once per turn in the brain bridge's turn preparation, with the policy, tools
+# and agent id the capture recovery call site passes (+19 LOC over dev
+# 042e0a2c at 41983; file count unchanged at 208).
+services	208	42002
 services/security	6	187
 services/stats	1	25
 services/tool	3	50
