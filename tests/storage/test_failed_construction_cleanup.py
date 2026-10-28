@@ -224,6 +224,42 @@ def test_engine_construction_keeps_its_error_when_a_backend_close_fails(
     assert closes == ["record"]
 
 
+def test_engine_construction_closes_the_record_store_when_the_vector_close_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    closes: list[str] = []
+    stores: list[_RecordStore] = []
+    injected = _Injected("emitter start")
+
+    class _FailingClose(_VectorStore):
+        def close(self) -> None:
+            super().close()
+            raise OSError("vector store close failed")
+
+    def record_factory(options: dict[str, Any]) -> _RecordStore:
+        stores.append(_RecordStore(options["sqlite_path"], closes))
+        return stores[-1]
+
+    registry = default_backend_registry()
+    registry.register_record("record.counted", record_factory)
+    registry.register_vector("vector.counted", lambda options: _FailingClose(closes))
+    monkeypatch.setattr(
+        storage_engine, "_start_pool_health_emitter", _failing(injected)
+    )
+
+    with pytest.raises(_Injected) as excinfo:
+        StorageEngine.from_config(
+            config=_engine_config(tmp_path, vector_backend="vector.counted"),
+            registry=registry,
+        )
+
+    assert excinfo.value is injected
+    # The vector close raised, and the record store was still closed, once.
+    assert closes == ["vector", "record"]
+    [store] = stores
+    assert connection_is_closed(store.connection)
+
+
 @pytest.mark.parametrize(
     "engine_close_fails", [False, True], ids=["closes", "close-fails"]
 )
