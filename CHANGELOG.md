@@ -34,6 +34,29 @@ This file tracks package-facing release notes for `openminion`.
   with `APIRuntime.close()`, which also stops a runtime manager that already
   started. A successful start hands the same objects to the runtime as
   before (Refs #447).
+- Find the compress module's migrations in `openminion storage migrate`.
+  Migration discovery looked for a module's storage package as
+  `openminion.modules.<id>.storage`, but the compress package is
+  `openminion.modules.context.compress.storage`, so `storage migrate --module
+  compress` and compress's own `run_migrations` failed with `Alembic
+  configuration missing` on SQLite and PostgreSQL and wrote nothing.
+  Discovery's map of nested module packages now lists compress, as it lists
+  `authoring` and `commerce`, and compress migrates to `0001_baseline` with
+  its tables. The compress migration and discovery for other modules are
+  unchanged (Refs #493).
+
+- Skip a turn's decision record and tool outcome candidate when the agent's
+  `memory.write` is not allowed. The brain wrote a `decision` record for every
+  routed turn and staged a `tool_outcome` candidate for a refused tool call,
+  with the call's arguments, without asking the memory policy, so with an
+  identity hard constraint such as `NEVER write memory records` a refused
+  `memory.write` call still left its content in the memory candidates. Both
+  writes now use the turn's `memory.write` answer, which the brain bridge asks
+  on every turn, including scheduled consolidation and diagnostic turns. When
+  it is not `allow`, including when it needs approval, the decision record is
+  skipped (`brain.decision_memory.skipped`, `memory_write_not_authorized`) and
+  no candidate is staged. The working state keeps the decision metadata, and
+  nothing asks for approval for these writes (Refs #496).
 - Keep a room's selected active agent a participant when the selection runs
   at the same time as a leave of that agent on another connection.
   `set_active_agent` checked that the agent was an active participant and

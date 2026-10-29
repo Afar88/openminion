@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 _NESTED_MODULE_STORAGE_IMPORT_PATHS: dict[str, list[str]] = {
     "authoring": ["openminion.modules.tool.authoring.storage"],
     "commerce": ["openminion.tools.commerce.storage"],
+    "compress": ["openminion.modules.context.compress.storage"],
 }
 
 
