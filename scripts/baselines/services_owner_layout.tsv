@@ -75,7 +75,12 @@ scope	max_python_files	max_loc
 # SECX-08 (2026-10-28) adds finite security scan admission/completion in the cron
 # owner and carries trusted scope through existing manager/ingress contracts.
 # Failed cron results retain their canonical evidence; no second scheduler.
-services	209	42298
+# Issue 448 (2026-10-28) asks the existing memory.write capture authorization
+# once per turn in the brain bridge's turn preparation, with the policy, tools
+# and agent id the capture recovery call site passes (+22 LOC in
+# services/brain/post_execution/mixin.py; measured on the tree reconciled with
+# dev 37fa75ff: 209 files, 42314 LOC).
+services	209	42314
 services/security	6	187
 services/stats	1	25
 services/tool	3	50

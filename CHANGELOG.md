@@ -7,6 +7,21 @@ This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
 
+- Ask the agent's `memory.write` authorization before a turn captures memory.
+  A turn's auto fact extraction and its capture bundle write ran without a
+  policy decision, so with an identity hard constraint such as `NEVER write
+  memory records` an ordinary turn still wrote its candidate, receipt and
+  `memory.capture.result`, while pending-capture recovery was refused for the
+  same capture. The brain bridge now asks once per turn, with the check and
+  internal actor that recovery uses and the turn's channel, session and root
+  turn. When the write is not allowed, including when it needs approval, the
+  turn makes no extraction request, writes nothing for its capture and asks no
+  approval for it, and its reply is unchanged. Its intent stays pending with
+  `CAPTURE_RECOVERY_UNAUTHORIZED`, and recovery commits it once the write is
+  allowed. A diagnostic turn (`openminion agent-check` and the turn smoke
+  check of `openminion doctor`), whose capture is disabled, no longer makes
+  the extraction request whose result it never wrote (Refs #448).
+
 - Close what a failed `APIRuntime` start built. When a start step raised,
   what the start had already built stayed open: the runtime storage (its
   SQLite connection, or the PostgreSQL connection pool and its pool-health
