@@ -1,11 +1,28 @@
 # OpenMinion Changelog
 
 Status: active
-Last updated: 2026-10-27
+Last updated: 2026-10-28
 
 This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
+
+- Ask the agent's `memory.write` authorization before a turn captures memory.
+  A turn's auto fact extraction and its capture bundle write ran without a
+  policy decision, so with an identity hard constraint such as `NEVER write
+  memory records` an ordinary turn still wrote its candidate, receipt and
+  `memory.capture.result`, while pending-capture recovery was refused for the
+  same capture. The brain bridge now asks once per turn, with the check and
+  internal actor that recovery uses and the turn's channel, session and root
+  turn. When the write is not allowed, including when it needs approval, the
+  turn makes no extraction request, writes nothing for its capture and asks no
+  approval for it, and its reply is unchanged. Its intent stays pending with
+  `CAPTURE_RECOVERY_UNAUTHORIZED`, and recovery commits it once the write is
+  allowed. A diagnostic turn (`openminion agent-check` and the turn smoke
+  check of `openminion doctor`), whose capture is disabled, no longer makes
+  the extraction request whose result it never wrote (Refs #448).
+
+## Current package line - 2026-10-28
 
 - Start `APIRuntime` with PostgreSQL runtime storage (`storage.backend:
   postgres`). The start read the runtime record store's SQLite connection for
@@ -24,6 +41,20 @@ This file tracks package-facing release notes for `openminion`.
   id. The `applied` list is left out: it read a field that `MigrationReport`
   does not have, so it was always empty. Exit status is unchanged (Refs
   #446).
+- Keep a room's active agent when a first agent join runs at the same time as
+  another join, an explicit selection or a leave on another connection. The
+  join read the room after its participant row had committed and, when the
+  room had no active agent, wrote its agent as active in a separate
+  statement. A second join could then replace the first activation, a join
+  could overwrite a `set_active_agent` selection (`/activate`), and a join
+  whose agent left meanwhile (`/kick`) stored that agent as active. The join
+  now reads and writes the active agent in its participant transaction, under
+  the session-row lock that joins and leaves already take, with the same
+  empty or blank check. The first activation a join commits stays until a
+  selection or a leave changes it, and a selection or leave made during a
+  join waits for it to commit, then applies. The active agent is still not
+  guaranteed to be the earliest join. Legacy owner records still activate no
+  agent (Refs #393).
 
 - Stop pending-capture recovery from calling the extraction model for an
   intent that the current memory store cannot commit. After the identity and
@@ -40,20 +71,28 @@ This file tracks package-facing release notes for `openminion`.
   extracted and then raised `AttributeError`. A memory API without the new
   predicate keeps the previous order, and the bundle write and its errors are
   unchanged (Refs #449).
-- Ask the agent's `memory.write` authorization before a turn captures memory.
-  A turn's auto fact extraction and its capture bundle write ran without a
-  policy decision, so with an identity hard constraint such as `NEVER write
-  memory records` an ordinary turn still wrote its candidate, receipt and
-  `memory.capture.result`, while pending-capture recovery was refused for the
-  same capture. The brain bridge now asks once per turn, with the check and
-  internal actor that recovery uses and the turn's channel, session and root
-  turn. When the write is not allowed, including when it needs approval, the
-  turn makes no extraction request, writes nothing for its capture and asks no
-  approval for it, and its reply is unchanged. Its intent stays pending with
-  `CAPTURE_RECOVERY_UNAUTHORIZED`, and recovery commits it once the write is
-  allowed. A diagnostic turn (`openminion agent-check` and the turn smoke
-  check of `openminion doctor`), whose capture is disabled, no longer makes
-  the extraction request whose result it never wrote (Refs #448).
+
+- Preserve scheduler-owned memory-consolidation context through runtime ingress
+  and gateway prompts, reject raw cron creation of reserved consolidation
+  payloads, and pause unverifiable legacy jobs with clear recreation guidance.
+- Report the configured telemetry exporter posture consistently, including
+  empty and error states, and connect invocation telemetry to current and recent
+  token usage without exposing content by default.
+- Harden MCP interoperability by refreshing tool definitions once after a
+  protocol header mismatch, enforcing the 1 MiB SSE event boundary, and
+  validating the official Python SDK 2.3.0 client/server paths.
+- Close artifact lifecycle gaps by validating retention inputs, normalizing
+  alias expiry, preserving historical cleanup, and carrying the existing
+  retrieval controller through durable tool ingestion with per-item failure
+  isolation.
+- Complete task lifecycle controls across Focus, CLI, and API with canonical
+  policy, run-now, scheduler status, bounded history, deterministic one-shot
+  behavior, and trusted cron/watch metadata. Live MiniMax acceptance confirmed
+  material-change watch delivery without runtime-owned semantic parsing.
+- Add opt-in isolated source, image, AWS snapshot, and local web/API security
+  assessments with bounded recurring evidence, SARIF export, exact finding
+  comparisons, cancellation, expiry, revision limits, and canonical closure
+  verdicts. Remote, cloud, and login assessment remain outside this release.
 
 ## Current package line - 2026-10-27
 
