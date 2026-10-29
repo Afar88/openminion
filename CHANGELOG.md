@@ -7,6 +7,19 @@ This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
 
+- Close what a failed `APIRuntime` start built. When a start step raised,
+  what the start had already built stayed open: the runtime storage (its
+  SQLite connection, or the PostgreSQL connection pool and its pool-health
+  emitter thread), the telemetry store, the module databases and the
+  services. The caller got the original error, but those objects stayed open
+  until a garbage collection freed them, and the PostgreSQL pool and emitter
+  not even then. Each step of the start now closes what it built with the
+  existing closes and re-raises the original error, also when one of those
+  closes fails. Once the runtime object exists, a later failure closes it
+  with `APIRuntime.close()`, which also stops a runtime manager that already
+  started. A successful start hands the same objects to the runtime as
+  before (Refs #447).
+
 ## Current package line - 2026-10-28
 
 - Start `APIRuntime` with PostgreSQL runtime storage (`storage.backend:
