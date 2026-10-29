@@ -7,6 +7,33 @@ This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
 
+- Ask the agent's `memory.write` authorization before a turn captures memory.
+  A turn's auto fact extraction and its capture bundle write ran without a
+  policy decision, so with an identity hard constraint such as `NEVER write
+  memory records` an ordinary turn still wrote its candidate, receipt and
+  `memory.capture.result`, while pending-capture recovery was refused for the
+  same capture. The brain bridge now asks once per turn, with the check and
+  internal actor that recovery uses and the turn's channel, session and root
+  turn. When the write is not allowed, including when it needs approval, the
+  turn makes no extraction request, writes nothing for its capture and asks no
+  approval for it, and its reply is unchanged. Its intent stays pending with
+  `CAPTURE_RECOVERY_UNAUTHORIZED`, and recovery commits it once the write is
+  allowed. A diagnostic turn (`openminion agent-check` and the turn smoke
+  check of `openminion doctor`), whose capture is disabled, no longer makes
+  the extraction request whose result it never wrote (Refs #448).
+
+- Close what a failed `APIRuntime` start built. When a start step raised,
+  what the start had already built stayed open: the runtime storage (its
+  SQLite connection, or the PostgreSQL connection pool and its pool-health
+  emitter thread), the telemetry store, the module databases and the
+  services. The caller got the original error, but those objects stayed open
+  until a garbage collection freed them, and the PostgreSQL pool and emitter
+  not even then. Each step of the start now closes what it built with the
+  existing closes and re-raises the original error, also when one of those
+  closes fails. Once the runtime object exists, a later failure closes it
+  with `APIRuntime.close()`, which also stops a runtime manager that already
+  started. A successful start hands the same objects to the runtime as
+  before (Refs #447).
 - Migrate the `controlplane` and `telemetry` modules on PostgreSQL. Their
   `0001_baseline` revisions applied SQLite's `INTEGER PRIMARY KEY
   AUTOINCREMENT` on every dialect, so `openminion storage migrate --backend

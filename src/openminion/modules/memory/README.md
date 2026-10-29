@@ -42,6 +42,31 @@ the parent submits it to the canonical candidate review and promotion flow.
 Cancellation and revocation block subsequent operations but cannot retract
 context already delivered to a running model.
 
+## Turn capture authorization
+
+A runtime turn's own memory capture, the auto fact extraction of the user
+message and the capture bundle written when the turn ends, needs the agent's
+`memory.write` authorization. The brain bridge asks once per turn, before the
+brain runs, with `memory_capture_allowed` in
+`openminion.modules.policy.adapters.memory`. It is the check that
+pending-capture recovery makes with `memory_capture_recovery_allowed`: the
+same internal actor, without the configured `internal_actor_scopes`, and the
+same `memory.write` tool profile, with the turn's channel, the target
+`memory-capture`, and the turn's runtime session and root turn, where recovery
+uses the `cron` channel and the target `memory-capture-recovery`. Without a
+security policy the capture is allowed; with a policy and no tool registry it
+is not.
+
+When the decision is not `allow`, including `require_approval` from an
+identity hard constraint such as `NEVER write memory records`, the turn makes
+no extraction request, writes no candidate, receipt or `memory.capture.result`,
+and asks no approval for its capture. Its reply is unchanged, and its capture
+intent stays pending with `"error_code": "CAPTURE_RECOVERY_UNAUTHORIZED"` in
+`memory_capture_bundle_result`. Pending-capture recovery asks its own check
+before it extracts, so it commits the intent once the write is allowed. A turn
+whose capture is excluded or disabled asks nothing and makes no extraction
+request.
+
 ## Backend options
 
 Under the top-level `runtime.memory_provider=memory_v2` seam, OpenMinion
