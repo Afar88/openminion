@@ -258,6 +258,8 @@ with, an existing config. Credentials are not included in a normal export, so
 set the referenced provider environment variables on the destination machine.
 Token limits, context budgets and credential environment-variable names remain
 in the export; credential values, including authentication headers, do not.
+See [turn budgets and token cost](turn-budgets.md) before changing limits to
+address an early stop or an expensive turn.
 
 File tools preserve newline bytes outside edited spans and reject invalid UTF-8
 content before modifying a file. `file.read_range` counts the actual file and
