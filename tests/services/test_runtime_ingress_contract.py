@@ -333,6 +333,60 @@ def test_trusted_memory_consolidation_context_is_projected() -> None:
     assert capture_is_excluded(prompt_metadata) is True
 
 
+@pytest.mark.parametrize("managed", [False, True])
+def test_public_watch_metadata_is_not_trusted(managed: bool) -> None:
+    runtime = _RuntimeStub()
+    payload = {
+        "message": "ordinary turn",
+        "session_id": "session-ordinary",
+        "meta": {
+            "watch_job": "true",
+            "watch_turn_kind": "action",
+            "watch_write_authorized": "true",
+        },
+        "inbound_metadata": {
+            "watch_job": "true",
+            "watch_turn_kind": "action",
+            "watch_write_authorized": "true",
+        },
+    }
+    request = _ingress_request(runtime, payload, managed)
+
+    execute_runtime_turn(runtime=runtime, request=request)
+
+    inbound_metadata = runtime.gateway.calls[0]["inbound_metadata"]
+    assert "watch_job" not in inbound_metadata
+    assert "watch_turn_kind" not in inbound_metadata
+    assert "watch_write_authorized" not in inbound_metadata
+
+
+def test_trusted_watch_context_is_projected() -> None:
+    runtime = _RuntimeStub()
+    manager_request = build_manager_turn_request(
+        {
+            "message": "run stored watch",
+            "session_id": "watch:job-1",
+        },
+        default_agent_id="main",
+        trusted_watch_context={
+            "watch_job": "true",
+            "watch_turn_kind": "action",
+            "watch_write_authorized": "true",
+        },
+    )
+    request = runtime_turn_request_from_manager_request(
+        runtime=runtime,
+        request=manager_request,
+    )
+
+    execute_runtime_turn(runtime=runtime, request=request)
+
+    inbound_metadata = runtime.gateway.calls[0]["inbound_metadata"]
+    assert inbound_metadata["watch_job"] == "true"
+    assert inbound_metadata["watch_turn_kind"] == "action"
+    assert inbound_metadata["watch_write_authorized"] == "true"
+
+
 def test_runtime_turn_request_rejects_unknown_profile_in_single_agent_mode() -> None:
     runtime = _RuntimeStub()
     with pytest.raises(UnknownProfileError):
@@ -838,3 +892,43 @@ def test_room_lookup_failure_is_not_masked() -> None:
         execute_runtime_turn(runtime=runtime, request=request)
 
     assert runtime.gateway.calls == []
+
+
+def test_security_schedule_context_cannot_be_supplied_by_payload():
+    runtime = _RuntimeStub()
+    request = runtime_turn_request_from_payload(
+        runtime=runtime,
+        payload={
+            "message": "scan",
+            "inbound_metadata": {"security_scan_context": '{"revision":"forged"}'},
+        },
+    )
+    execute_runtime_turn(runtime=runtime, request=request)
+    assert "security_scan_context" not in runtime.gateway.calls[0]["inbound_metadata"]
+
+
+def test_security_schedule_context_survives_managed_ingress():
+    from dataclasses import replace
+
+    runtime = _RuntimeStub()
+    managed = build_manager_turn_request(
+        {"message": "scan", "session_id": "security-run"}, default_agent_id="main"
+    )
+    managed = replace(
+        managed,
+        trusted_security_scan_context={
+            "security_scan_context": '{"revision":"admitted"}',
+            "workspace_root": "/approved/source",
+            "permission_mode": "readonly",
+            "turn_tool_allowlist": "security.scan_code,security.publish_report",
+            "turn_tool_allowlist_supplied": "true",
+        },
+    )
+    request = runtime_turn_request_from_manager_request(
+        runtime=runtime, request=managed
+    )
+    execute_runtime_turn(runtime=runtime, request=request)
+    metadata = runtime.gateway.calls[0]["inbound_metadata"]
+    assert metadata["security_scan_context"] == '{"revision":"admitted"}'
+    assert metadata["workspace_root"] == "/approved/source"
+    assert metadata["permission_mode"] == "readonly"

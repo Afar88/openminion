@@ -40,7 +40,8 @@ class RuntimeTurnRequest:
     )
     trusted_subagent_context: Any | None = None
     explicit_agent: bool = False
-    trusted_memory_consolidation_context: Mapping[str, str] | None = None
+    trusted_task_context: Mapping[str, str] | None = None
+    trusted_security_scan_context: Mapping[str, str] | None = None
 
 
 @dataclass(frozen=True)

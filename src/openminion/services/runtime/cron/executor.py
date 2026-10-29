@@ -26,6 +26,7 @@ from openminion.tools.task.routine.schemas import RoutinePayloadV1
 from openminion.services.runtime.cron.audit import watch_write_audit_entries
 from openminion.modules.task.cron_payloads import (
     build_cron_turn_result,
+    trusted_watch_context,
     build_cron_request_payload,
     build_expired_watch_result,
     finalize_watch_turn,
@@ -56,6 +57,9 @@ from openminion.tools.task.constants import (
 )
 
 _CRON_LOGGER = get_logger("modules.cron")
+CronRequestBuilder = Callable[
+    [dict[str, Any], str, dict[str, str] | None, dict[str, str] | None], Any
+]
 
 
 def _capture_candidate_extractor(
@@ -92,7 +96,7 @@ class CronTurnExecutor:
         *,
         runtime: Any,
         cron_store: Any,
-        request_builder: Callable[..., Any],
+        request_builder: CronRequestBuilder,
         timeout_s: float,
         task_manager: TaskManager | None = None,
         routine_dispatcher: RoutineDispatcher | None = None,
@@ -152,6 +156,24 @@ class CronTurnExecutor:
                 job=job, run=run, payload=payload, watch=watch
             )
 
+        if "security_scan" in payload:
+            from .security import execute_security_run
+
+            if not self._agent_is_registered(str(job.get("agent_id", ""))):
+                return {
+                    "summary": "security scan agent is not registered",
+                    "error": True,
+                }
+            return execute_security_run(
+                runtime=self._runtime,
+                manager=self._task_manager,
+                store=self._cron_store,
+                job=job,
+                run=run,
+                request_builder=self._request_builder,
+                artifactctl_factory=self._artifactctl_factory,
+                timeout_s=self._timeout_s,
+            )
         return self._execute_agent_turn(job=job, run=run, payload=payload)
 
     def _execute_project_cycle(
@@ -549,10 +571,12 @@ class CronTurnExecutor:
             if consolidation is not None
             else None
         )
-        request = (
-            self._request_builder(request_payload, agent_id, trusted_context)
-            if trusted_context is not None
-            else self._request_builder(request_payload, agent_id)
+        watch_context = trusted_watch_context(request_payload)
+        request = self._request_builder(
+            request_payload,
+            agent_id,
+            trusted_context,
+            watch_context,
         )
         handle = manager.submit_turn(request)
         result = handle.result(timeout_s=wait(self._timeout_s, request_payload))
@@ -628,7 +652,7 @@ class CronTurnExecutor:
         request_payload: dict[str, Any],
         agent_id: str,
     ) -> dict[str, Any]:
-        request = self._request_builder(request_payload, agent_id)
+        request = self._request_builder(request_payload, agent_id, None, None)
         handle = manager.submit_turn(request)
         result = handle.result(timeout_s=wait(self._timeout_s, request_payload))
         raise_for_cron_turn_errors(result)
