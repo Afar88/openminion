@@ -9,6 +9,7 @@ from openminion.base.time import utc_now_iso
 from openminion.modules.llm import ProviderError
 from openminion.modules.memory.errors import (
     CaptureBundleIntegrityError,
+    CaptureRecoveryUnauthorizedError,
     CaptureRecoveryUnsupportedError,
     MemctlError,
 )
@@ -132,6 +133,7 @@ class BrainRunner:
         self.turn_input_queue = turn_input_queue
         self.terminal_capture_writer = terminal_capture_writer
         self._terminal_capture_enabled_for_turn = True
+        self._capture_authorized_for_turn = True
         self._lgmh_hydrated_sessions: set[str] = set()
         self._pending_run_trigger: str | None = None
         self._pending_gateway_system_context: str | None = None
@@ -227,6 +229,13 @@ class BrainRunner:
         state = result.working_state
         writer = self.terminal_capture_writer
         if self.memory_api is None or writer is None:
+            return
+        if not self._capture_authorized_for_turn:
+            result.memory_capture_bundle_result = {
+                "capture_id": identity.capture_id,
+                "disposition": "pending",
+                "error_code": CaptureRecoveryUnauthorizedError.code,
+            }
             return
         if state.memory_capture_report_root_turn_id != identity.root_turn_id:
             return
