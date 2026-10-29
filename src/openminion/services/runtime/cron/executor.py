@@ -26,6 +26,7 @@ from openminion.tools.task.routine.schemas import RoutinePayloadV1
 from openminion.services.runtime.cron.audit import watch_write_audit_entries
 from openminion.modules.task.cron_payloads import (
     build_cron_turn_result,
+    trusted_watch_context,
     build_cron_request_payload,
     build_expired_watch_result,
     finalize_watch_turn,
@@ -41,6 +42,7 @@ from openminion.services.runtime.project_worker import ProjectWorkerResult
 from openminion.services.runtime.project_worker import build_cron_project_worker
 from openminion.tools.task.constants import (
     CONSOLIDATION_PAYLOAD_KEY,
+    CONSOLIDATION_TASK_KIND,
     DEFAULT_CONSOLIDATION_BATCH_LIMIT,
     DEFAULT_CONSOLIDATION_MAX_ITERATIONS,
     DEFAULT_CONSOLIDATION_TIMEOUT_SECONDS,
@@ -55,6 +57,9 @@ from openminion.tools.task.constants import (
 )
 
 _CRON_LOGGER = get_logger("modules.cron")
+CronRequestBuilder = Callable[
+    [dict[str, Any], str, dict[str, str] | None, dict[str, str] | None], Any
+]
 
 
 def _capture_candidate_extractor(
@@ -91,8 +96,9 @@ class CronTurnExecutor:
         *,
         runtime: Any,
         cron_store: Any,
-        request_builder: Callable[[dict[str, Any], str], Any],
+        request_builder: CronRequestBuilder,
         timeout_s: float,
+        task_manager: TaskManager | None = None,
         routine_dispatcher: RoutineDispatcher | None = None,
         artifactctl_factory: Callable[[], Any] = create_default_artifactctl,
     ) -> None:
@@ -100,6 +106,7 @@ class CronTurnExecutor:
         self._cron_store = cron_store
         self._request_builder = request_builder
         self._timeout_s = max(10.0, float(timeout_s))
+        self._task_manager = task_manager
         self._routine_dispatcher = routine_dispatcher or build_default_dispatcher()
         self._artifactctl_factory = artifactctl_factory
 
@@ -149,6 +156,24 @@ class CronTurnExecutor:
                 job=job, run=run, payload=payload, watch=watch
             )
 
+        if "security_scan" in payload:
+            from .security import execute_security_run
+
+            if not self._agent_is_registered(str(job.get("agent_id", ""))):
+                return {
+                    "summary": "security scan agent is not registered",
+                    "error": True,
+                }
+            return execute_security_run(
+                runtime=self._runtime,
+                manager=self._task_manager,
+                store=self._cron_store,
+                job=job,
+                run=run,
+                request_builder=self._request_builder,
+                artifactctl_factory=self._artifactctl_factory,
+                timeout_s=self._timeout_s,
+            )
         return self._execute_agent_turn(job=job, run=run, payload=payload)
 
     def _execute_project_cycle(
@@ -493,7 +518,12 @@ class CronTurnExecutor:
                 "error": True,
             }
 
-        consolidation = self._consolidation_metadata(payload)
+        consolidation = self._consolidation_metadata(
+            payload,
+            job_id=str(job.get("job_id") or "").strip(),
+        )
+        if CONSOLIDATION_PAYLOAD_KEY in payload and consolidation is None:
+            return self._disable_untrusted_consolidation_job(job=job)
         if consolidation:
             assembly = self._runtime.resolve_memory_assembly(agent_id)
             agent_service = self._runtime.resolve_agent_service(agent_id)
@@ -536,13 +566,24 @@ class CronTurnExecutor:
                     request_meta["goal_context_preloaded"] = "true"
             except Exception:
                 pass
-        request = self._request_builder(request_payload, agent_id)
+        trusted_context = (
+            self._trusted_consolidation_context(request_payload)
+            if consolidation is not None
+            else None
+        )
+        watch_context = trusted_watch_context(request_payload)
+        request = self._request_builder(
+            request_payload,
+            agent_id,
+            trusted_context,
+            watch_context,
+        )
         handle = manager.submit_turn(request)
         result = handle.result(timeout_s=wait(self._timeout_s, request_payload))
         return build_cron_turn_result(
             result=result,
             session_id=request.session_id,
-            consolidation=self._consolidation_metadata(payload),
+            consolidation=consolidation,
             completed_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -611,7 +652,7 @@ class CronTurnExecutor:
         request_payload: dict[str, Any],
         agent_id: str,
     ) -> dict[str, Any]:
-        request = self._request_builder(request_payload, agent_id)
+        request = self._request_builder(request_payload, agent_id, None, None)
         handle = manager.submit_turn(request)
         result = handle.result(timeout_s=wait(self._timeout_s, request_payload))
         raise_for_cron_turn_errors(result)
@@ -757,19 +798,76 @@ class CronTurnExecutor:
             run=run,
             message=message,
             payload=payload,
-            consolidation_metadata=self._consolidation_metadata,
+            consolidation_metadata=partial(
+                self._consolidation_metadata,
+                job_id=str(job.get("job_id") or "").strip(),
+            ),
             watch_metadata=self._watch_metadata,
         )
 
-    def _consolidation_metadata(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+    def _consolidation_metadata(
+        self,
+        payload: dict[str, Any],
+        *,
+        job_id: str,
+    ) -> dict[str, Any] | None:
         raw = payload.get(CONSOLIDATION_PAYLOAD_KEY)
         if not isinstance(raw, dict):
+            return None
+        task = (
+            self._task_manager.get_task_by_job(job_id)
+            if self._task_manager is not None
+            else None
+        )
+        if task is None or task.metadata.get("kind") != CONSOLIDATION_TASK_KIND:
             return None
         metadata = dict(raw)
         metadata.setdefault("batch_limit", DEFAULT_CONSOLIDATION_BATCH_LIMIT)
         metadata.setdefault("max_iterations", DEFAULT_CONSOLIDATION_MAX_ITERATIONS)
         metadata.setdefault("timeout_seconds", DEFAULT_CONSOLIDATION_TIMEOUT_SECONDS)
         return metadata
+
+    def _disable_untrusted_consolidation_job(
+        self,
+        *,
+        job: dict[str, Any],
+    ) -> dict[str, Any]:
+        job_id = str(job.get("job_id") or "").strip()
+        result = {
+            "summary": (
+                "memory consolidation job is missing trusted task provenance; "
+                "it was paused and must be recreated with task.consolidate_memory"
+            ),
+            "error": True,
+        }
+        task_manager = self._task_manager
+        if task_manager is not None:
+            task = task_manager.get_task_by_job(job_id)
+            if task is not None:
+                task_manager.pause_task(task.task_id)
+                return result
+        self._cron_store.set_cron_job_enabled(
+            job_id,
+            False,
+            cancel_queued=True,
+        )
+        return result
+
+    @staticmethod
+    def _trusted_consolidation_context(
+        request_payload: dict[str, Any],
+    ) -> dict[str, str]:
+        metadata = dict(request_payload.get("meta") or {})
+        return {
+            key: str(metadata[key])
+            for key in (
+                "memory_consolidation_job",
+                "memory_consolidation_target_scope",
+                "memory_consolidation_batch_limit",
+                "memory_consolidation_max_iterations",
+                "memory_consolidation_timeout_seconds",
+            )
+        }
 
     def _watch_metadata(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         raw = payload.get(WATCH_PAYLOAD_KEY)

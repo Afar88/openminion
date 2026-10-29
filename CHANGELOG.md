@@ -1,11 +1,83 @@
 # OpenMinion Changelog
 
 Status: active
-Last updated: 2026-10-27
+Last updated: 2026-10-28
 
 This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
+
+## Current package line - 2026-10-28
+
+- Start `APIRuntime` with PostgreSQL runtime storage (`storage.backend:
+  postgres`). The start read the runtime record store's SQLite connection for
+  every backend and failed with `runtime record_store does not expose sqlite
+  connection`, so commands such as `openminion room create` exited with a
+  startup error. `APIRuntime.storage_connection`, and the compatibility
+  wrapper's `OpenMinionRuntime.storage`, are now the SQLite connection on
+  SQLite, unchanged, and `None` for other backends; sessions and rooms go
+  through `runtime.sessions` on either backend. A SQLite record store without
+  a connection still fails the start with the same error. What is covered on
+  PostgreSQL is listed in `docs/runtime-database-upgrades.md` (Refs #437).
+- Report the migration error in `openminion storage migrate` entries. When a
+  module's `MigrationReport` failed, its entry had status `error` but no
+  message, and the text output printed only `FAIL <module>`. The entry now
+  carries the report's `error`, and the text line prints it after the module
+  id. The `applied` list is left out: it read a field that `MigrationReport`
+  does not have, so it was always empty. Exit status is unchanged (Refs
+  #446).
+- Keep a room's active agent when a first agent join runs at the same time as
+  another join, an explicit selection or a leave on another connection. The
+  join read the room after its participant row had committed and, when the
+  room had no active agent, wrote its agent as active in a separate
+  statement. A second join could then replace the first activation, a join
+  could overwrite a `set_active_agent` selection (`/activate`), and a join
+  whose agent left meanwhile (`/kick`) stored that agent as active. The join
+  now reads and writes the active agent in its participant transaction, under
+  the session-row lock that joins and leaves already take, with the same
+  empty or blank check. The first activation a join commits stays until a
+  selection or a leave changes it, and a selection or leave made during a
+  join waits for it to commit, then applies. The active agent is still not
+  guaranteed to be the earliest join. Legacy owner records still activate no
+  agent (Refs #393).
+
+- Stop pending-capture recovery from calling the extraction model for an
+  intent that the current memory store cannot commit. After the identity and
+  authorization checks, recovery asks the memory owners whether the store can
+  commit an atomic capture bundle (`supports_capture_bundles()`, the existing
+  method check, now readable without a write). With a backend without
+  `apply_capture_bundle`, such as `reference-sqlite`, each intent stays pending
+  with its counts and `CAPTURE_RECOVERY_UNSUPPORTED` diagnostic, and no source
+  message is read and no extraction request is made; before, every memory
+  consolidation run extracted again for each pending intent up to its
+  `batch_limit`. The same intents are recovered once the agent uses a store
+  that can commit them. Under the audit wrapper, a store without the method,
+  such as the in-memory store, is now reported the same way; before, recovery
+  extracted and then raised `AttributeError`. A memory API without the new
+  predicate keeps the previous order, and the bundle write and its errors are
+  unchanged (Refs #449).
+
+- Preserve scheduler-owned memory-consolidation context through runtime ingress
+  and gateway prompts, reject raw cron creation of reserved consolidation
+  payloads, and pause unverifiable legacy jobs with clear recreation guidance.
+- Report the configured telemetry exporter posture consistently, including
+  empty and error states, and connect invocation telemetry to current and recent
+  token usage without exposing content by default.
+- Harden MCP interoperability by refreshing tool definitions once after a
+  protocol header mismatch, enforcing the 1 MiB SSE event boundary, and
+  validating the official Python SDK 2.3.0 client/server paths.
+- Close artifact lifecycle gaps by validating retention inputs, normalizing
+  alias expiry, preserving historical cleanup, and carrying the existing
+  retrieval controller through durable tool ingestion with per-item failure
+  isolation.
+- Complete task lifecycle controls across Focus, CLI, and API with canonical
+  policy, run-now, scheduler status, bounded history, deterministic one-shot
+  behavior, and trusted cron/watch metadata. Live MiniMax acceptance confirmed
+  material-change watch delivery without runtime-owned semantic parsing.
+- Add opt-in isolated source, image, AWS snapshot, and local web/API security
+  assessments with bounded recurring evidence, SARIF export, exact finding
+  comparisons, cancellation, expiry, revision limits, and canonical closure
+  verdicts. Remote, cloud, and login assessment remain outside this release.
 
 ## Current package line - 2026-10-27
 
