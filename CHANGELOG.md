@@ -57,6 +57,18 @@ This file tracks package-facing release notes for `openminion`.
   skipped (`brain.decision_memory.skipped`, `memory_write_not_authorized`) and
   no candidate is staged. The working state keeps the decision metadata, and
   nothing asks for approval for these writes (Refs #496).
+- Keep a room's selected active agent a participant when the selection runs
+  at the same time as a leave of that agent on another connection.
+  `set_active_agent` checked that the agent was an active participant and
+  then wrote `active_agent_id` in a separate statement, outside the
+  session-row lock that joins and leaves take, so a leave (`/kick`) could
+  commit between the two and the selection (`/activate`) then stored an agent
+  that had left. The selection now reads the agent's membership after taking
+  that lock and writes the active agent in the same transaction. A leave
+  during a selection waits for it to commit and then runs its fallback; a
+  selection during a leave waits for it and is refused with the existing
+  `Agent ... is not an active participant` error. The errors and the
+  returned session are unchanged (Refs #495).
 
 ## Current package line - 2026-10-28
 

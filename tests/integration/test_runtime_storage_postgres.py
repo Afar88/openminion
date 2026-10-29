@@ -45,10 +45,13 @@ from tests._room_participant_scenarios import (
     check_joins_selection_and_leaves_on_two_connections,
     check_leave_and_rejoin_wait_for_each_other,
     check_leave_during_a_join_applies_after_it,
+    check_leave_during_a_selection_applies_after_it,
     check_joins_write_no_session_value,
     check_legacy_owner_join_order,
     check_legacy_owner_records_activate_no_agent,
+    check_legacy_session_selection,
     check_selection_during_a_join_applies_after_it,
+    check_selection_during_a_leave_is_refused,
     check_tied_join_order,
     check_upgraded_join_order,
     legacy_participant_rows,
@@ -940,8 +943,17 @@ def test_postgres_leave_and_rejoin_on_two_connections_wait_for_each_other(
         check_selection_during_a_join_applies_after_it,
         check_leave_during_a_join_applies_after_it,
         check_joins_selection_and_leaves_on_two_connections,
+        check_leave_during_a_selection_applies_after_it,
+        check_selection_during_a_leave_is_refused,
     ],
-    ids=["two-first-joins", "selection", "leave", "one-after-another"],
+    ids=[
+        "two-first-joins",
+        "selection",
+        "leave",
+        "one-after-another",
+        "leave-during-selection",
+        "selection-during-leave",
+    ],
 )
 def test_postgres_room_active_agent_on_two_connections(
     tmp_path: Path,
@@ -981,6 +993,14 @@ def test_postgres_room_join_activation_rules(
     with _postgres_schema("om393_activation_rules") as url:
         with _postgres_sessions(tmp_path, url) as sessions:
             check(sessions)
+
+
+@pytest.mark.postgres
+def test_postgres_legacy_session_keeps_its_selection_rules(tmp_path: Path) -> None:
+    pytest.importorskip("sqlalchemy")
+    with _postgres_schema("om495_legacy_selection") as url:
+        with _postgres_sessions(tmp_path, url) as sessions:
+            check_legacy_session_selection(sessions)
 
 
 @pytest.mark.postgres
