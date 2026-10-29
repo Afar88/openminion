@@ -7,6 +7,17 @@ This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
 
+- Find the compress module's migrations in `openminion storage migrate`.
+  Migration discovery looked for a module's storage package as
+  `openminion.modules.<id>.storage`, but the compress package is
+  `openminion.modules.context.compress.storage`, so `storage migrate --module
+  compress` and compress's own `run_migrations` failed with `Alembic
+  configuration missing` on SQLite and PostgreSQL and wrote nothing.
+  Discovery's map of nested module packages now lists compress, as it lists
+  `authoring` and `commerce`, and compress migrates to `0001_baseline` with
+  its tables. The compress migration and discovery for other modules are
+  unchanged (Refs #493).
+
 ## Current package line - 2026-10-28
 
 - Start `APIRuntime` with PostgreSQL runtime storage (`storage.backend:
