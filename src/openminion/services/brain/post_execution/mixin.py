@@ -20,6 +20,7 @@ from openminion.modules.brain.diagnostics.status import (
     StatusDetailCode,
     normalize_phase_status,
 )
+from openminion.modules.policy.adapters.memory import memory_capture_allowed
 from openminion.modules.session.capture import (
     capture_is_excluded,
     capture_run_kwargs,
@@ -37,6 +38,7 @@ from openminion.services.security.blast_radius.wiring import (
 from openminion.services.security.tool_execution import (
     build_execution_boundary_policy_adapter,
 )
+from openminion.services.agent.execution.composition import AgentServiceTurnFlowAdapter
 from openminion.services.agent.identity_binding import issue_execution_identity
 from openminion.modules.telemetry.execution_lifecycle import AgentExecutionTelemetry
 
@@ -177,6 +179,9 @@ class BrainBridgeTurnMixin:
         runner._terminal_capture_enabled_for_turn = terminal_capture_is_enabled(
             message.metadata or {}
         )
+        runner._capture_authorized_for_turn = self._memory_capture_authorized(
+            message=message, session_id=session_id
+        )
         self._inject_gateway_system_context(
             runner=runner,
             session_id=session_id,
@@ -199,6 +204,23 @@ class BrainBridgeTurnMixin:
             await self._telemetryctl.emit_tick(session_id, turn_id, 0)
 
         return runner, session_id, request_id, turn_id, turn_start_time
+
+    def _memory_capture_authorized(self, *, message: Message, session_id: str) -> bool:
+        metadata = message.metadata or {}
+        if capture_is_excluded(metadata) or not terminal_capture_is_enabled(metadata):
+            return False
+        capture = capture_run_kwargs(metadata)
+        service_port = AgentServiceTurnFlowAdapter(self)
+        return bool(
+            memory_capture_allowed(
+                capture["runtime_session_id"] or session_id,
+                capture["root_turn_id"] or "",
+                channel=str(message.channel or "brain"),
+                policy=service_port.security_policy,
+                tools=service_port.tools,
+                agent_id=service_port.identity_agent_id,
+            )
+        )
 
     def _refresh_prep_identity_state(self) -> None:
         self._last_identity_snippet = None
