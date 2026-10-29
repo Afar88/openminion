@@ -146,6 +146,85 @@ never run an older process against working state saved by the newer package.
 Rolling back means restoring the matching pre-upgrade backup with the
 matching older package.
 
+## Memory consolidation jobs from earlier packages
+
+From 0.1.15, the daemon runs a scheduled job as memory consolidation only when
+its task record has the kind `memory_consolidation`, which
+`task.consolidate_memory` stores when it creates the job. Earlier packages did
+not store it, and the upgrade does not add it. So every consolidation job
+created by an earlier `task.consolidate_memory` stops, and so does any job
+whose payload has the reserved `_openminion_memory_consolidation` key without
+such a task record.
+
+The first time the daemon runs such a job, the run fails with `memory
+consolidation job is missing trusted task provenance; it was paused and must
+be recreated with task.consolidate_memory`. It runs no turn and no capture
+recovery, and the task is paused with its schedule disabled (a job without a
+task record is only disabled). Resuming it does not help: its next run fails
+and pauses it again.
+
+To inspect the jobs:
+
+```bash
+openminion tasks list --json
+openminion tasks show TASK_ID --json
+openminion tools run task.list --json '{"limit": 50}'
+```
+
+A consolidation task has the instruction `Review the provided memory
+candidates, decide which to promote, discard, or defer, ...`, and `task.list`
+shows its `consolidation` settings. The task kind is not shown, so treat every
+consolidation task that exists when you upgrade as a pre-upgrade job, whether
+it has run yet or not. One that has run is `paused` with `enabled: false`, and
+its `last_run` failed with the message above.
+
+The `tasks` commands act on the default agent's tasks; add `--agent-id AGENT`
+for another agent's. `openminion tools run` acts as the agent `openminion`,
+whatever the default agent is. For another agent, set `OPENMINION_AGENT_ID`
+and run the tool in this process:
+
+```bash
+OPENMINION_AGENT_ID=AGENT openminion tools run task.list \
+  --runtime-source inproc --json '{"limit": 50}'
+```
+
+Replace each pre-upgrade job:
+
+1. Note its `agent_id`, its interval (`schedule.every_ms` in `tasks show`,
+   3600000 per hour) and its `consolidation.batch_limit` (`task.list`).
+2. Stop it before you create the replacement:
+   `openminion tasks cancel TASK_ID --json`, which also works on a job that
+   its failed run paused. A cancelled job cannot be resumed next to its
+   replacement. `openminion tasks pause TASK_ID --json` also stops a job that
+   has not run yet, but leaves it resumable.
+3. Create the replacement through `task.consolidate_memory`, with the same
+   settings:
+
+   ```bash
+   openminion tools run task.consolidate_memory \
+     --json '{"interval_hours": 12, "batch_limit": 8}'
+   ```
+
+   For another agent's job, add `OPENMINION_AGENT_ID=AGENT` and
+   `--runtime-source inproc` as above.
+4. Check with `openminion tasks list --json` that the replacement is the only
+   consolidation task with `enabled: true`, and that its `agent_id` is the old
+   job's.
+
+Creating the replacement while the old job is still enabled is not refused;
+both stay enabled until the old job's next run pauses it.
+
+New jobs with the reserved payload cannot be created through the raw cron
+API: `POST /v1/cron/jobs` answers `400` (`invalid_request`) with `memory
+consolidation jobs must be created through task.consolidate_memory` and adds
+no job.
+
+Pending capture intents are kept: the failed run, `pause` and `cancel` leave
+them as they are. Their recovery is separate from this procedure and works as
+before: each consolidation run of the replacement recovers them first, on a
+memory store that can commit a capture bundle; on one that cannot, they stay
+pending.
+
 ## Runtime migration 15: session metadata string rows
 
 Migration 15 adds `session_metadata_strings`, one row for each top-level member
