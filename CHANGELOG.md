@@ -69,6 +69,19 @@ This file tracks package-facing release notes for `openminion`.
   selection during a leave waits for it and is refused with the existing
   `Agent ... is not an active participant` error. The errors and the
   returned session are unchanged (Refs #495).
+- Migrate the `controlplane` and `telemetry` modules on PostgreSQL. Their
+  `0001_baseline` revisions applied SQLite's `INTEGER PRIMARY KEY
+  AUTOINCREMENT` on every dialect, so `openminion storage migrate --backend
+  postgres --module controlplane` and `--module telemetry` failed with a
+  syntax error and wrote nothing. On PostgreSQL they now create the column
+  types the modules' PostgreSQL stores already use: `SERIAL PRIMARY KEY` ids
+  and a `DOUBLE PRECISION` telemetry timestamp. Tables the stores created
+  before the migration are kept with their rows; an existing table whose id
+  or timestamp has another type stops the upgrade with an error naming the
+  column, and nothing is written. The controlplane store also opens a
+  database the baseline created, where it failed with a duplicate
+  `next_attempt_at` column, on SQLite too. The SQLite DDL and the revisions
+  are unchanged (Refs #494).
 
 ## Current package line - 2026-10-28
 
