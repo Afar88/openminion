@@ -34,6 +34,16 @@ This file tracks package-facing release notes for `openminion`.
   with `APIRuntime.close()`, which also stops a runtime manager that already
   started. A successful start hands the same objects to the runtime as
   before (Refs #447).
+- Find the compress module's migrations in `openminion storage migrate`.
+  Migration discovery looked for a module's storage package as
+  `openminion.modules.<id>.storage`, but the compress package is
+  `openminion.modules.context.compress.storage`, so `storage migrate --module
+  compress` and compress's own `run_migrations` failed with `Alembic
+  configuration missing` on SQLite and PostgreSQL and wrote nothing.
+  Discovery's map of nested module packages now lists compress, as it lists
+  `authoring` and `commerce`, and compress migrates to `0001_baseline` with
+  its tables. The compress migration and discovery for other modules are
+  unchanged (Refs #493).
 
 ## Current package line - 2026-10-28
 

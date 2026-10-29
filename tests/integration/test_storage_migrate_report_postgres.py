@@ -1,4 +1,8 @@
-"""`storage migrate --backend postgres` entries carry the report error (#446)."""
+"""`storage migrate --backend postgres` on a new schema.
+
+Entries carry the report error (#446), and `--module compress` finds its
+migrations (#493).
+"""
 
 from __future__ import annotations
 
@@ -63,6 +67,68 @@ def test_postgres_module_migration_reports_success_and_failure(
         assert entry["success"] is False
         assert "9999_not_a_revision" in entry["error"]
         assert "applied" not in entry
+    finally:
+        with admin_engine.begin() as conn:
+            conn.execute(sa.text(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'))
+        admin_engine.dispose()
+
+
+def test_postgres_compress_module_migrates_a_new_schema(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sa = pytest.importorskip("sqlalchemy")
+    postgres_url = str(os.getenv("OPENMINION_TEST_POSTGRES_URL", "")).strip()
+    if not postgres_url:
+        pytest.skip("OPENMINION_TEST_POSTGRES_URL is not set")
+
+    # A new schema of its own: modules that share a database also share one
+    # alembic_version table (#446), so compress runs alone here.
+    schema_name = f"migrate_compress_{uuid.uuid4().hex}"
+    admin_engine = sa.create_engine(postgres_url, future=True)
+    with admin_engine.begin() as conn:
+        conn.execute(sa.text(f'CREATE SCHEMA "{schema_name}"'))
+    scoped_url = schema_url(postgres_url, schema_name)
+    args = SimpleNamespace(
+        backend="postgres",
+        postgres_url=scoped_url,
+        sqlite=str(tmp_path / "openminion.db"),
+        module="compress",
+        plan=False,
+        verify=False,
+        json=True,
+    )
+    try:
+        code = 0
+        try:
+            run_storage_migrate(args)
+        except SystemExit as exc:
+            code = exc.code
+
+        assert json.loads(capsys.readouterr().out)["modules"] == [
+            {"module_id": "compress", "status": "ok", "success": True}
+        ]
+        assert code == 0
+        engine = sa.create_engine(scoped_url, future=True)
+        try:
+            with engine.connect() as conn:
+                revisions = conn.execute(
+                    sa.text("SELECT version_num FROM alembic_version")
+                )
+                assert revisions.scalars().all() == ["0001_baseline"]
+                module_id = conn.execute(
+                    sa.text("SELECT value FROM om_meta WHERE key = 'module_id'")
+                )
+                assert module_id.scalar_one() == "compress"
+                tables = set(sa.inspect(conn).get_table_names(schema=schema_name))
+        finally:
+            engine.dispose()
+        assert tables == {
+            "alembic_version",
+            "compression_failures",
+            "compression_runs",
+            "dropped_reasons",
+            "om_meta",
+        }
     finally:
         with admin_engine.begin() as conn:
             conn.execute(sa.text(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'))
