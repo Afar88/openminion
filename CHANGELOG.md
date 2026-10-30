@@ -11,6 +11,12 @@ This file tracks package-facing release notes for `openminion`.
   synthesis can answer from supplied evidence. Preserve forced `submit_output`,
   schema validation, and caller-owned routing/judgment contracts (Refs #530).
 
+- Give the first two decision turns the normal `2,200`-token context-pack
+  target instead of the former `1,500`-token target. This leaves more room for
+  the user's initial request, instructions and early clarification without
+  changing later-turn scaling, completion budgets, provider output limits or
+  saved agent profiles.
+
 - Stage no `tool_outcome` memory candidate for an outcome classified as
   `policy_denied`. When the user denied a tool call, or the call was still
   waiting for the user's confirmation, the brain staged a `policy_denied`
@@ -49,6 +55,30 @@ This file tracks package-facing release notes for `openminion`.
   directly or through a pooler that passes the `options` startup parameter.
   `docs/runtime-database-upgrades.md` gives the details and the operator's
   relocation steps (Refs #446).
+
+- Document the upgrade for memory consolidation jobs from packages before
+  0.1.15. Since 0.1.15 the daemon runs a job as memory consolidation only when
+  its task record has the `memory_consolidation` kind that
+  `task.consolidate_memory` stores. A job created by `task.consolidate_memory`
+  of a package before 0.1.15, or any job with the reserved payload and no such
+  record, fails its first run with the provenance message, without a turn or
+  capture recovery, and is paused. `docs/runtime-database-upgrades.md` now
+  describes how to inspect those jobs, cancel or pause each one before
+  creating its replacement through `task.consolidate_memory`, and check that
+  the old job is not enabled and the replacement is, for the same agent; that
+  jobs created by 0.1.15 or later keep running next to the replacements and
+  are not replaced on later upgrades; that the raw cron API rejects the
+  reserved payload; and that pending capture intents are kept and recovered as
+  before. New tests create the job through the tool's handler and run it
+  through the daemon's scheduler, whose own task manager reads the stored kind
+  (Refs #456).
+
+- Let `Agent.run()` and `Agent.run_stream()` answer a waiting confirmation.
+  A second `run()` after "Policy confirmation required." started a new thread,
+  so the reply did not reach the tool call waiting on the first one. Both
+  methods now accept an optional `thread_id` that sends the turn to that
+  thread, and `AgentRunResult.thread_id` returns the turn's thread. Omitted or
+  blank, it changes nothing (Refs #541).
 
 ## Current package line - 2026-10-29
 
