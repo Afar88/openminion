@@ -214,9 +214,13 @@ Replace each pre-upgrade job, and only those:
 
    For another agent's job, add `OPENMINION_AGENT_ID=AGENT` and
    `--runtime-source inproc` as above.
-4. Check with `openminion tasks list --json` that the replacement is the only
-   consolidation task with `enabled: true`, and that its `agent_id` is the old
-   job's.
+4. Check with `openminion tasks list --json` that the old job is not enabled
+   (`cancelled`, or `paused` with `enabled: false`), and that the replacement
+   has `enabled: true` and the old job's `agent_id`. The enabled consolidation
+   tasks are then the replacements plus any job that `task.consolidate_memory`
+   of 0.1.15 or later created, which stays as it is. After an upgrade from a
+   package before 0.1.15, every consolidation task present was a pre-upgrade
+   job, so the replacements are the only enabled consolidation tasks.
 
 Creating the replacement while the old job is still enabled is not refused;
 both stay enabled until the old job's next run pauses it.

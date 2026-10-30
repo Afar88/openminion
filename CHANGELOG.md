@@ -16,12 +16,13 @@ This file tracks package-facing release notes for `openminion`.
   capture recovery, and is paused. `docs/runtime-database-upgrades.md` now
   describes how to inspect those jobs, cancel or pause each one before
   creating its replacement through `task.consolidate_memory`, and check that
-  only the replacement is enabled; that jobs created by 0.1.15 or later keep
-  running and are not replaced on later upgrades; that the raw cron API
-  rejects the reserved payload; and that pending capture intents are kept and
-  recovered as before. New tests create the job through the tool's handler
-  and run it through the daemon's scheduler, whose own task manager reads the
-  stored kind (Refs #456).
+  the old job is not enabled and the replacement is, for the same agent; that
+  jobs created by 0.1.15 or later keep running next to the replacements and
+  are not replaced on later upgrades; that the raw cron API rejects the
+  reserved payload; and that pending capture intents are kept and recovered as
+  before. New tests create the job through the tool's handler and run it
+  through the daemon's scheduler, whose own task manager reads the stored kind
+  (Refs #456).
 
 ## Current package line - 2026-10-29
 
