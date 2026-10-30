@@ -150,11 +150,13 @@ matching older package.
 
 From 0.1.15, the daemon runs a scheduled job as memory consolidation only when
 its task record has the kind `memory_consolidation`, which
-`task.consolidate_memory` stores when it creates the job. Earlier packages did
-not store it, and the upgrade does not add it. So every consolidation job
-created by an earlier `task.consolidate_memory` stops, and so does any job
-whose payload has the reserved `_openminion_memory_consolidation` key without
-such a task record.
+`task.consolidate_memory` stores when it creates the job. Packages before
+0.1.15 did not store it, and the upgrade does not add it. So every
+consolidation job created by `task.consolidate_memory` of a package before
+0.1.15 stops, and so does any job whose payload has the reserved
+`_openminion_memory_consolidation` key without such a task record. Jobs
+created by `task.consolidate_memory` of 0.1.15 or later have the kind and keep
+running after later upgrades: do not cancel or recreate them.
 
 The first time the daemon runs such a job, the run fails with `memory
 consolidation job is missing trusted task provenance; it was paused and must
@@ -173,10 +175,15 @@ openminion tools run task.list --json '{"limit": 50}'
 
 A consolidation task has the instruction `Review the provided memory
 candidates, decide which to promote, discard, or defer, ...`, and `task.list`
-shows its `consolidation` settings. The task kind is not shown, so treat every
-consolidation task that exists when you upgrade as a pre-upgrade job, whether
-it has run yet or not. One that has run is `paused` with `enabled: false`, and
-its `last_run` failed with the message above.
+shows its `consolidation` settings. The task kind is not shown, so when you
+upgrade from a package before 0.1.15, treat every consolidation task that
+exists at that upgrade as a pre-upgrade job, whether it has run yet or not.
+When you upgrade from 0.1.15 or later, do not treat the existing
+consolidation tasks as pre-upgrade jobs: a task is one only when its run fails
+with the message above (a job created before 0.1.15 and never replaced), and
+only that task needs a replacement. A pre-upgrade job that has run is
+`paused` with `enabled: false`, and its `last_run` failed with the message
+above.
 
 The `tasks` commands act on the default agent's tasks; add `--agent-id AGENT`
 for another agent's. `openminion tools run` acts as the agent `openminion`,
@@ -188,7 +195,7 @@ OPENMINION_AGENT_ID=AGENT openminion tools run task.list \
   --runtime-source inproc --json '{"limit": 50}'
 ```
 
-Replace each pre-upgrade job:
+Replace each pre-upgrade job, and only those:
 
 1. Note its `agent_id`, its interval (`schedule.every_ms` in `tasks show`,
    3600000 per hour) and its `consolidation.batch_limit` (`task.list`).

@@ -7,19 +7,21 @@ This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
 
-- Document the upgrade for memory consolidation jobs from earlier packages.
-  Since 0.1.15 the daemon runs a job as memory consolidation only when its
-  task record has the `memory_consolidation` kind that
-  `task.consolidate_memory` stores. A job created by an earlier
-  `task.consolidate_memory`, or any job with the reserved payload and no such
-  record, fails its first run without a turn or capture recovery and is
-  paused. `docs/runtime-database-upgrades.md` now describes how to inspect
-  those jobs, cancel or pause each one before creating its replacement
-  through `task.consolidate_memory`, and check that only the replacement is
-  enabled; that the raw cron API rejects the reserved payload; and that
-  pending capture intents are kept and recovered as before. New tests create
-  the job through the tool's handler and run it through the daemon's
-  scheduler, whose own task manager reads the stored kind (Refs #456).
+- Document the upgrade for memory consolidation jobs from packages before
+  0.1.15. Since 0.1.15 the daemon runs a job as memory consolidation only when
+  its task record has the `memory_consolidation` kind that
+  `task.consolidate_memory` stores. A job created by `task.consolidate_memory`
+  of a package before 0.1.15, or any job with the reserved payload and no such
+  record, fails its first run with the provenance message, without a turn or
+  capture recovery, and is paused. `docs/runtime-database-upgrades.md` now
+  describes how to inspect those jobs, cancel or pause each one before
+  creating its replacement through `task.consolidate_memory`, and check that
+  only the replacement is enabled; that jobs created by 0.1.15 or later keep
+  running and are not replaced on later upgrades; that the raw cron API
+  rejects the reserved payload; and that pending capture intents are kept and
+  recovered as before. New tests create the job through the tool's handler
+  and run it through the daemon's scheduler, whose own task manager reads the
+  stored kind (Refs #456).
 
 ## Current package line - 2026-10-29
 
