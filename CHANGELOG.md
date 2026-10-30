@@ -69,6 +69,13 @@ This file tracks package-facing release notes for `openminion`.
   through the daemon's scheduler, whose own task manager reads the stored kind
   (Refs #456).
 
+- Let `Agent.run()` and `Agent.run_stream()` answer a waiting confirmation.
+  A second `run()` after "Policy confirmation required." started a new thread,
+  so the reply did not reach the tool call waiting on the first one. Both
+  methods now accept an optional `thread_id` that sends the turn to that
+  thread, and `AgentRunResult.thread_id` returns the turn's thread. Omitted or
+  blank, it changes nothing (Refs #541).
+
 ## Current package line - 2026-10-29
 
 - Ask the agent's `memory.write` authorization before a turn captures memory.
