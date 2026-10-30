@@ -1,11 +1,22 @@
 # OpenMinion Changelog
 
 Status: active
-Last updated: 2026-10-28
+Last updated: 2026-10-29
 
 This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
+
+- Stage no `tool_outcome` memory candidate for a tool call that did not run.
+  When the user denied a tool call, or the call was still waiting for the
+  user's confirmation, the brain staged a `policy_denied` `tool_outcome`
+  candidate in agent scope whose content and metadata held the call's
+  arguments, also when the agent's memory policy allowed the write. Such a
+  call now stages no candidate. Candidates for calls that ran (failure,
+  timeout, allowlisted success), the turn's `memory.write` answer and the
+  policy and approval events are unchanged (Refs #524).
+
+## Current package line - 2026-10-29
 
 - Ask the agent's `memory.write` authorization before a turn captures memory.
   A turn's auto fact extraction and its capture bundle write ran without a
@@ -82,14 +93,6 @@ This file tracks package-facing release notes for `openminion`.
   database the baseline created, where it failed with a duplicate
   `next_attempt_at` column, on SQLite too. The SQLite DDL and the revisions
   are unchanged (Refs #494).
-- Stage no `tool_outcome` memory candidate for a tool call that did not run.
-  When the user denied a tool call, or the call was still waiting for the
-  user's confirmation, the brain staged a `policy_denied` `tool_outcome`
-  candidate in agent scope whose content and metadata held the call's
-  arguments, also when the agent's memory policy allowed the write. Such a
-  call now stages no candidate. Candidates for calls that ran (failure,
-  timeout, allowlisted success), the turn's `memory.write` answer and the
-  policy and approval events are unchanged (Refs #524).
 
 ## Current package line - 2026-10-28
 
