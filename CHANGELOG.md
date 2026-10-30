@@ -7,6 +7,10 @@ This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
 
+- Keep native structured-output instructions limited to formatting so research
+  synthesis can answer from supplied evidence. Preserve forced `submit_output`,
+  schema validation, and caller-owned routing/judgment contracts (Refs #530).
+
 - Give the first two decision turns the normal `2,200`-token context-pack
   target instead of the former `1,500`-token target. This leaves more room for
   the user's initial request, instructions and early clarification without
