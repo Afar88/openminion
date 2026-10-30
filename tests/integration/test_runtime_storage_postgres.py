@@ -32,6 +32,7 @@ from openminion.modules.task.run import (
     resolve_invocation_terminal,
     resolve_thread_lifecycle,
 )
+from tests._failed_start_scenarios import assert_released, automatic_gc_off
 from tests._room_participant_scenarios import (
     COUNTED_JOIN_SEQ_SQL,
     LEGACY_ORDER,
@@ -44,10 +45,13 @@ from tests._room_participant_scenarios import (
     check_joins_selection_and_leaves_on_two_connections,
     check_leave_and_rejoin_wait_for_each_other,
     check_leave_during_a_join_applies_after_it,
+    check_leave_during_a_selection_applies_after_it,
     check_joins_write_no_session_value,
     check_legacy_owner_join_order,
     check_legacy_owner_records_activate_no_agent,
+    check_legacy_session_selection,
     check_selection_during_a_join_applies_after_it,
+    check_selection_during_a_leave_is_refused,
     check_tied_join_order,
     check_upgraded_join_order,
     legacy_participant_rows,
@@ -939,8 +943,17 @@ def test_postgres_leave_and_rejoin_on_two_connections_wait_for_each_other(
         check_selection_during_a_join_applies_after_it,
         check_leave_during_a_join_applies_after_it,
         check_joins_selection_and_leaves_on_two_connections,
+        check_leave_during_a_selection_applies_after_it,
+        check_selection_during_a_leave_is_refused,
     ],
-    ids=["two-first-joins", "selection", "leave", "one-after-another"],
+    ids=[
+        "two-first-joins",
+        "selection",
+        "leave",
+        "one-after-another",
+        "leave-during-selection",
+        "selection-during-leave",
+    ],
 )
 def test_postgres_room_active_agent_on_two_connections(
     tmp_path: Path,
@@ -980,6 +993,14 @@ def test_postgres_room_join_activation_rules(
     with _postgres_schema("om393_activation_rules") as url:
         with _postgres_sessions(tmp_path, url) as sessions:
             check(sessions)
+
+
+@pytest.mark.postgres
+def test_postgres_legacy_session_keeps_its_selection_rules(tmp_path: Path) -> None:
+    pytest.importorskip("sqlalchemy")
+    with _postgres_schema("om495_legacy_selection") as url:
+        with _postgres_sessions(tmp_path, url) as sessions:
+            check_legacy_session_selection(sessions)
 
 
 @pytest.mark.postgres
@@ -1365,3 +1386,79 @@ def test_postgres_runtime_storage_wrapper_has_no_sqlite_storage_handle(
 
         assert database.connections() == 0
     assert not state_db(root).exists()
+
+
+class _InjectedStartFailure(RuntimeError):
+    """The error a failed-start case injects into one step of the start."""
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "case",
+    [
+        "started-then-closed",
+        "sessions-table-exists",
+        "stack-gateway-after-agent",
+        "construction-post-init",
+        "after-construction-runtime-manager",
+    ],
+)
+def test_postgres_failed_start_closes_the_owned_engine_and_emitter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    """A failed start closes the record store's engine and stops its emitter (#447).
+
+    Automatic garbage collection is off, so the checks right after the
+    exception see what the owners closed, not what a collection freed.
+    """
+    from openminion.api import runtime as runtime_module
+    from openminion.api.core import bootstrap
+    from openminion.modules.storage.engine import StorageEngine
+
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    engine_closes: list[StorageEngine] = []
+    engine_close = StorageEngine.close
+
+    def counted_close(self: StorageEngine) -> None:
+        engine_closes.append(self)
+        engine_close(self)
+
+    monkeypatch.setattr(StorageEngine, "close", counted_close)
+    injected = _InjectedStartFailure(case)
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise injected
+
+    if case == "stack-gateway-after-agent":
+        monkeypatch.setattr(bootstrap, "build_gateway_service", fail)
+    elif case == "construction-post-init":
+        monkeypatch.setattr(runtime_module, "initialize_runtime_components", fail)
+    elif case == "after-construction-runtime-manager":
+        monkeypatch.setattr(bootstrap, "build_runtime_manager", fail)
+    root = tmp_path / "root"
+    with _runtime_database("om447_start") as database, automatic_gc_off():
+        if case == "sessions-table-exists":
+            setup = sqlalchemy.create_engine(database.url, future=True)
+            with setup.begin() as conn:
+                conn.execute(
+                    sqlalchemy.text(
+                        "CREATE TABLE sessions (session_id TEXT PRIMARY KEY)"
+                    )
+                )
+            setup.dispose()
+        config_path = write_runtime_config(root, postgres_url=database.url)
+        threads = set(threading.enumerate())
+
+        if case == "started-then-closed":
+            start_runtime(config_path).close()
+        elif case == "sessions-table-exists":
+            with pytest.raises(MigrationError, match="sessions"):
+                start_runtime(config_path)
+        else:
+            with pytest.raises(_InjectedStartFailure) as excinfo:
+                start_runtime(config_path)
+            assert excinfo.value is injected
+
+        assert len(engine_closes) == 1
+        assert database.connections() == 0
+        assert_released(root, threads)

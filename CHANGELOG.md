@@ -1,11 +1,89 @@
 # OpenMinion Changelog
 
 Status: active
-Last updated: 2026-10-28
+Last updated: 2026-10-29
 
 This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
+
+## Current package line - 2026-10-29
+
+- Ask the agent's `memory.write` authorization before a turn captures memory.
+  A turn's auto fact extraction and its capture bundle write ran without a
+  policy decision, so with an identity hard constraint such as `NEVER write
+  memory records` an ordinary turn still wrote its candidate, receipt and
+  `memory.capture.result`, while pending-capture recovery was refused for the
+  same capture. The brain bridge now asks once per turn, with the check and
+  internal actor that recovery uses and the turn's channel, session and root
+  turn. When the write is not allowed, including when it needs approval, the
+  turn makes no extraction request, writes nothing for its capture and asks no
+  approval for it, and its reply is unchanged. Its intent stays pending with
+  `CAPTURE_RECOVERY_UNAUTHORIZED`, and recovery commits it once the write is
+  allowed. A diagnostic turn (`openminion agent-check` and the turn smoke
+  check of `openminion doctor`), whose capture is disabled, no longer makes
+  the extraction request whose result it never wrote (Refs #448).
+
+- Close what a failed `APIRuntime` start built. When a start step raised,
+  what the start had already built stayed open: the runtime storage (its
+  SQLite connection, or the PostgreSQL connection pool and its pool-health
+  emitter thread), the telemetry store, the module databases and the
+  services. The caller got the original error, but those objects stayed open
+  until a garbage collection freed them, and the PostgreSQL pool and emitter
+  not even then. Each step of the start now closes what it built with the
+  existing closes and re-raises the original error, also when one of those
+  closes fails. Once the runtime object exists, a later failure closes it
+  with `APIRuntime.close()`, which also stops a runtime manager that already
+  started. A successful start hands the same objects to the runtime as
+  before (Refs #447).
+- Find the compress module's migrations in `openminion storage migrate`.
+  Migration discovery looked for a module's storage package as
+  `openminion.modules.<id>.storage`, but the compress package is
+  `openminion.modules.context.compress.storage`, so `storage migrate --module
+  compress` and compress's own `run_migrations` failed with `Alembic
+  configuration missing` on SQLite and PostgreSQL and wrote nothing.
+  Discovery's map of nested module packages now lists compress, as it lists
+  `authoring` and `commerce`, and compress migrates to `0001_baseline` with
+  its tables. The compress migration and discovery for other modules are
+  unchanged (Refs #493).
+
+- Skip a turn's decision record and tool outcome candidate when the agent's
+  `memory.write` is not allowed. The brain wrote a `decision` record for every
+  routed turn and staged a `tool_outcome` candidate for a refused tool call,
+  with the call's arguments, without asking the memory policy, so with an
+  identity hard constraint such as `NEVER write memory records` a refused
+  `memory.write` call still left its content in the memory candidates. Both
+  writes now use the turn's `memory.write` answer, which the brain bridge asks
+  on every turn, including scheduled consolidation and diagnostic turns. When
+  it is not `allow`, including when it needs approval, the decision record is
+  skipped (`brain.decision_memory.skipped`, `memory_write_not_authorized`) and
+  no candidate is staged. The working state keeps the decision metadata, and
+  nothing asks for approval for these writes (Refs #496).
+- Keep a room's selected active agent a participant when the selection runs
+  at the same time as a leave of that agent on another connection.
+  `set_active_agent` checked that the agent was an active participant and
+  then wrote `active_agent_id` in a separate statement, outside the
+  session-row lock that joins and leaves take, so a leave (`/kick`) could
+  commit between the two and the selection (`/activate`) then stored an agent
+  that had left. The selection now reads the agent's membership after taking
+  that lock and writes the active agent in the same transaction. A leave
+  during a selection waits for it to commit and then runs its fallback; a
+  selection during a leave waits for it and is refused with the existing
+  `Agent ... is not an active participant` error. The errors and the
+  returned session are unchanged (Refs #495).
+- Migrate the `controlplane` and `telemetry` modules on PostgreSQL. Their
+  `0001_baseline` revisions applied SQLite's `INTEGER PRIMARY KEY
+  AUTOINCREMENT` on every dialect, so `openminion storage migrate --backend
+  postgres --module controlplane` and `--module telemetry` failed with a
+  syntax error and wrote nothing. On PostgreSQL they now create the column
+  types the modules' PostgreSQL stores already use: `SERIAL PRIMARY KEY` ids
+  and a `DOUBLE PRECISION` telemetry timestamp. Tables the stores created
+  before the migration are kept with their rows; an existing table whose id
+  or timestamp has another type stops the upgrade with an error naming the
+  column, and nothing is written. The controlplane store also opens a
+  database the baseline created, where it failed with a duplicate
+  `next_attempt_at` column, on SQLite too. The SQLite DDL and the revisions
+  are unchanged (Refs #494).
 
 ## Current package line - 2026-10-28
 
