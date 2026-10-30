@@ -1,11 +1,13 @@
 # OpenMinion Changelog
 
 Status: active
-Last updated: 2026-10-28
+Last updated: 2026-10-29
 
 This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
+
+## Current package line - 2026-10-29
 
 - Ask the agent's `memory.write` authorization before a turn captures memory.
   A turn's auto fact extraction and its capture bundle write ran without a
