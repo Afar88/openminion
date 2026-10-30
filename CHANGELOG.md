@@ -7,6 +7,10 @@ This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
 
+- Keep native structured-output instructions limited to formatting so research
+  synthesis can answer from supplied evidence. Preserve forced `submit_output`,
+  schema validation, and caller-owned routing/judgment contracts (Refs #530).
+
 - Stage no `tool_outcome` memory candidate for an outcome classified as
   `policy_denied`. When the user denied a tool call, or the call was still
   waiting for the user's confirmation, the brain staged a `policy_denied`
