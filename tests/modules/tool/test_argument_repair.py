@@ -1,5 +1,5 @@
-from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 import pytest
+from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 
 from openminion.modules.tool.runtime.argument_repair import (
     missing_simple_required_fields,
