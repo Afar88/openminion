@@ -1,9 +1,7 @@
 import json
 import re
-from typing import Any
 from collections.abc import Collection, Mapping
-
-from pydantic import BaseModel, ValidationError
+from typing import Any
 
 from pydantic import BaseModel
 
