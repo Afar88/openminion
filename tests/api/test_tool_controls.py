@@ -8,7 +8,7 @@ from typing import Annotated
 
 import pytest
 import pydantic
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
 from openminion import Agent, APIRuntime, Handoff, tool
 from openminion.modules.tool.framework import build_registrar
@@ -693,3 +693,32 @@ def test_sdk_tool_honours_nested_name_only_validation_config(sdk_tools):
     assert [item.value for item in received] == [7]
     assert type(received[0]) is _NameOnly
     assert "VALUE 7" in result.text
+
+
+def test_sdk_tool_preserves_transforming_validator_semantics(sdk_tools):
+    calls = []
+
+    class _TransformingQuery(BaseModel):
+        values: list[int]
+
+        @field_validator("values", mode="before")
+        @classmethod
+        def append_marker(cls, value):
+            calls.append(1)
+            value.append(99)
+            return value
+
+    received = []
+
+    @tool(name="transforming_probe", min_scope="READ_ONLY", idempotent=True)
+    def operation(query: _TransformingQuery) -> str:
+        received.append(query.values)
+        return f"VALUES {query.values}"
+
+    result = _run_alias_tool(
+        sdk_tools, "transforming_probe", {"query": {"values": [1]}}, operation
+    )
+
+    assert received == [[1, 99, 99, 99]]
+    assert len(calls) == 4
+    assert "VALUES [1, 99, 99, 99]" in result.text
