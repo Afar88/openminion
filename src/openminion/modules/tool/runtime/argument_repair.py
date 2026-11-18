@@ -175,9 +175,7 @@ def validate_model_tool_args(
         channel_name=f"model_tool:{tool_name}.args",
     )
     validated = args_model.model_validate(repaired)
-    if isinstance(repaired, Mapping):
-        return dict(repaired)
-    return validated.model_dump()
+    return accepted_tool_args(validated, repaired)
 
 
 def accepted_tool_args(
@@ -186,13 +184,55 @@ def accepted_tool_args(
     *,
     input_keys: Collection[str] | None = None,
 ) -> dict[str, Any]:
-    """Choose schema-compatible arguments without validating a second time."""
+    """Return a canonical dump only when its field names remain valid inputs."""
     dumped = validated.model_dump()
     if not isinstance(accepted, Mapping):
         return dumped
-    if input_keys is not None and set(dumped) <= set(input_keys):
-        return dumped
-    return dict(accepted)
+    if not _model_dump_accepts_input_keys(validated):
+        return dict(accepted)
+    if input_keys is not None and not set(dumped) <= set(input_keys):
+        return dict(accepted)
+    return dumped
+
+
+def _model_dump_accepts_input_keys(
+    model: BaseModel, seen: set[int] | None = None
+) -> bool:
+    visited = seen if seen is not None else set()
+    identity = id(model)
+    if identity in visited:
+        return True
+    visited.add(identity)
+
+    config = getattr(type(model), "model_config", {}) or {}
+    accepts_field_names = bool(
+        config.get("populate_by_name") or config.get("validate_by_name")
+    )
+    for field_name, field_info in type(model).model_fields.items():
+        input_alias = getattr(field_info, "validation_alias", None)
+        if input_alias is None:
+            input_alias = getattr(field_info, "alias", None)
+        if (
+            input_alias is not None
+            and input_alias != field_name
+            and not accepts_field_names
+        ):
+            return False
+        if not _nested_models_accept_input_keys(
+            getattr(model, field_name), visited
+        ):
+            return False
+    return True
+
+
+def _nested_models_accept_input_keys(value: Any, seen: set[int]) -> bool:
+    if isinstance(value, BaseModel):
+        return _model_dump_accepts_input_keys(value, seen)
+    if isinstance(value, Mapping):
+        return all(_nested_models_accept_input_keys(item, seen) for item in value.values())
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return all(_nested_models_accept_input_keys(item, seen) for item in value)
+    return True
 
 
 def _model_alias_map(args_model: Any) -> dict[str, str]:
