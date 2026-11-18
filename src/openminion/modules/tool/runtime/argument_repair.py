@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Any, cast
+from typing import Any
 from collections.abc import Collection, Mapping
 
 from pydantic import BaseModel, ValidationError
@@ -172,7 +172,10 @@ def validate_model_tool_args(
         args_model=args_model,
         channel_name=f"model_tool:{tool_name}.args",
     )
-    return accepted_tool_args(args_model.model_validate(repaired), repaired)
+    validated = args_model.model_validate(repaired)
+    if isinstance(repaired, Mapping):
+        return dict(repaired)
+    return validated.model_dump()
 
 
 def accepted_tool_args(
@@ -181,27 +184,12 @@ def accepted_tool_args(
     *,
     input_keys: Collection[str] | None = None,
 ) -> dict[str, Any]:
-    """Arguments to hand on after ``validated`` was built from ``accepted``.
-
-    The canonical ``model_dump()`` is handed on, as before, when it is itself
-    an input the tool accepts: it validates again under the args model's own
-    configuration and, when ``input_keys`` (the schema keys) is given, uses
-    only those keys. Otherwise the provider mapping the model has just
-    accepted is handed on unchanged, keeping its keys and shape. No second
-    serializer is involved and model configuration is never changed.
-    """
+    """Choose schema-compatible arguments without validating a second time."""
     dumped = validated.model_dump()
     if not isinstance(accepted, Mapping):
-        return cast(dict[str, Any], dumped)
-    if input_keys is None or (
-        isinstance(dumped, Mapping) and set(dumped) <= set(input_keys)
-    ):
-        try:
-            type(validated).model_validate(dumped)
-        except ValidationError:
-            pass
-        else:
-            return cast(dict[str, Any], dumped)
+        return dumped
+    if input_keys is not None and set(dumped) <= set(input_keys):
+        return dumped
     return dict(accepted)
 
 
