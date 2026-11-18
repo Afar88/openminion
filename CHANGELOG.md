@@ -7,6 +7,11 @@ This file tracks package-facing release notes for `openminion`.
 
 ## Unreleased
 
+- Preserve accepted Pydantic argument keys through SDK tool sanitizing and
+  execution. Alias-only inputs remain usable, serialization aliases are not
+  treated as input keys, and representation selection no longer revalidates
+  already accepted arguments (Refs #454).
+
 ## Current package line - 2026-10-24
 
 - Preserve deterministic session-message and transcript-event ordering when
