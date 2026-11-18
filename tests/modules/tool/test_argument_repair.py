@@ -116,8 +116,7 @@ def test_validate_model_tool_args_keeps_canonical_dump_when_it_revalidates() -> 
         label: str = "x"
 
     result = validate_model_tool_args({"value": "5"}, _Plain, "t")
-    assert result == {"value": "5"}
-    assert _Plain.model_validate(result).model_dump() == {"value": 5, "label": "x"}
+    assert result == {"value": 5, "label": "x"}
 
 
 def test_validate_model_tool_args_keeps_root_model_shapes() -> None:
@@ -166,3 +165,18 @@ def test_validate_model_tool_args_hands_on_repaired_mapping_not_provider_payload
     # Provider sent a field-name key an alias-only model rejects: no bypass.
     with pytest.raises(ValidationError):
         validate_model_tool_args({"value": 7}, _Args, "t")
+
+
+def test_validate_model_tool_args_preserves_nested_alias_keys() -> None:
+    class _NestedAlias(BaseModel):
+        value: int = Field(alias="external_value")
+
+    class _Args(BaseModel):
+        query: _NestedAlias
+
+    result = validate_model_tool_args(
+        {"query": {"external_value": 5}}, _Args, "nested-alias"
+    )
+
+    assert result == {"query": {"external_value": 5}}
+    assert _Args.model_validate(result).query.value == 5
