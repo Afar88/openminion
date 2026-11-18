@@ -3,9 +3,10 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event, Thread
+from typing import Annotated
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, RootModel, field_validator
 
 from openminion import Agent, APIRuntime, Handoff, tool
 from openminion.modules.tool.framework import build_registrar
@@ -56,7 +57,7 @@ def sdk_tools(tmp_path, monkeypatch):
             if name and not state.get(sent_key, False):
                 state[sent_key] = True
                 arguments = (
-                    {"order_id": "A-104"}
+                    state.get("tool_arguments", {"order_id": "A-104"})
                     if name != "transfer_to_child"
                     else {"message": "Return LOCAL_MARKER."}
                 )
@@ -412,3 +413,114 @@ def test_handoff_approval_does_not_authorize_child_tools(sdk_tools):
     assert approvals == ["transfer_to_child"]
     assert calls == []
     assert "Risk: destructive" in result.text
+
+
+def _run_alias_tool(sdk_tools, tool_name, arguments, fn):
+    runtime, _requests, state = sdk_tools
+    runtime.config.action_policy.rules = []
+    state.update(
+        tool_name=tool_name,
+        echo_tool_result=True,
+        tool_arguments=arguments,
+    )
+    return Agent(runtime=runtime, tools=[fn]).run("Run.")
+
+
+def test_sdk_tool_receives_top_level_alias_argument(sdk_tools):
+    received = []
+
+    @tool(name="scale_value", min_scope="READ_ONLY", idempotent=True)
+    def scale_value(value: Annotated[int, Field(alias="external_value")]) -> str:
+        received.append(value)
+        return f"VALUE {value}"
+
+    result = _run_alias_tool(
+        sdk_tools, "scale_value", {"external_value": 3}, scale_value
+    )
+    assert received == [3]
+    assert "VALUE 3" in result.text
+
+
+def test_sdk_tool_receives_nested_alias_argument(sdk_tools):
+    class Query(BaseModel):
+        min_total: int = Field(alias="minTotal", ge=0)
+
+    received = []
+
+    @tool(name="filter_orders", min_scope="READ_ONLY", idempotent=True)
+    def filter_orders(query: Query) -> str:
+        received.append(query)
+        return f"FILTER {query.min_total}"
+
+    result = _run_alias_tool(
+        sdk_tools, "filter_orders", {"query": {"minTotal": 7}}, filter_orders
+    )
+    assert [item.min_total for item in received] == [7]
+    assert "FILTER 7" in result.text
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"external_value": "not-an-int"},
+        {},
+        {"value": 3},
+    ],
+)
+def test_sdk_tool_rejects_invalid_top_level_alias_argument(sdk_tools, arguments):
+    received = []
+
+    @tool(name="scale_value", min_scope="READ_ONLY", idempotent=True)
+    def scale_value(value: Annotated[int, Field(alias="external_value")]) -> str:
+        received.append(value)
+        return "VALUE_RAN"
+
+    _run_alias_tool(sdk_tools, "scale_value", arguments, scale_value)
+    assert received == []
+
+
+def test_sdk_tool_receives_nested_root_model_argument_shape(sdk_tools):
+    class Numbers(RootModel[list[int]]):
+        pass
+
+    received = []
+
+    @tool(name="root_model_probe", min_scope="READ_ONLY", idempotent=True)
+    def operation(query: Numbers) -> str:
+        received.append(query)
+        return f"SUM {sum(query.root)}"
+
+    result = _run_alias_tool(
+        sdk_tools, "root_model_probe", {"query": [1, 2]}, operation
+    )
+    assert received == [Numbers([1, 2])]
+    assert type(received[0]) is Numbers
+    assert "SUM 3" in result.text
+
+
+def test_sdk_tool_preserves_transforming_validator_semantics(sdk_tools):
+    calls = []
+
+    class TransformingQuery(BaseModel):
+        values: list[int]
+
+        @field_validator("values", mode="before")
+        @classmethod
+        def append_marker(cls, value):
+            calls.append(1)
+            value.append(99)
+            return value
+
+    received = []
+
+    @tool(name="transforming_probe", min_scope="READ_ONLY", idempotent=True)
+    def operation(query: TransformingQuery) -> str:
+        received.append(query.values)
+        return f"VALUES {query.values}"
+
+    result = _run_alias_tool(
+        sdk_tools, "transforming_probe", {"query": {"values": [1]}}, operation
+    )
+    assert received == [[1, 99, 99, 99]]
+    assert len(calls) == 4
+    assert "VALUES [1, 99, 99, 99]" in result.text
