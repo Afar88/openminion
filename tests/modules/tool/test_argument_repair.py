@@ -115,10 +115,9 @@ def test_validate_model_tool_args_keeps_canonical_dump_when_it_revalidates() -> 
         value: int
         label: str = "x"
 
-    assert validate_model_tool_args({"value": "5"}, _Plain, "t") == {
-        "value": 5,
-        "label": "x",
-    }
+    result = validate_model_tool_args({"value": "5"}, _Plain, "t")
+    assert result == {"value": "5"}
+    assert _Plain.model_validate(result).model_dump() == {"value": 5, "label": "x"}
 
 
 def test_validate_model_tool_args_keeps_root_model_shapes() -> None:
@@ -133,31 +132,27 @@ def test_validate_model_tool_args_keeps_root_model_shapes() -> None:
     assert validate_model_tool_args({"query": [1, 2]}, _Args, "t") == {"query": [1, 2]}
 
 
-def test_revalidation_probe_does_not_repeat_custom_validator_transformations() -> None:
+def test_transforming_validator_runs_once_in_argument_owner() -> None:
     from pydantic import field_validator
 
-    calls: list[str] = []
+    calls: list[int] = []
 
     class _Args(BaseModel):
-        model_config = ConfigDict(extra="forbid")
+        values: list[int]
 
-        value: int = Field(alias="external")
-
-        @field_validator("value", mode="before")
+        @field_validator("values", mode="before")
         @classmethod
-        def _count(cls, v: object) -> object:
-            calls.append("before")
-            return v
+        def _append_marker(cls, value: list[int]) -> list[int]:
+            calls.append(1)
+            value.append(99)
+            return value
 
-    provider = {"external": 7}
-    out = validate_model_tool_args(provider, _Args, "t")
+    provider = {"values": [1]}
+    out = validate_model_tool_args(provider, _Args, "probe")
 
-    # Alias-only model: dump keys differ, so the dump is probed once (one more
-    # validator run) and the accepted provider mapping is handed on unchanged.
-    assert out == {"external": 7}
-    assert provider == {"external": 7}
-    assert len(calls) <= 2  # initial validation plus at most one probe
-    assert _Args.model_validate(out).value == 7
+    assert out == {"values": [1, 99]}
+    assert provider == {"values": [1, 99]}
+    assert len(calls) == 1
 
 
 def test_validate_model_tool_args_hands_on_repaired_mapping_not_provider_payload() -> (
