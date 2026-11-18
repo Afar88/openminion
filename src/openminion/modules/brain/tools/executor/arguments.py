@@ -71,13 +71,14 @@ def sanitize_tool_command_args(
     model_validate = getattr(args_model, "model_validate", None)
     if callable(model_validate):
         # Lazy import: tool -> brain -> tool circular import.
-        from openminion.modules.tool.runtime.argument_repair import (
-            accepted_tool_args,
-        )
-
         try:
+            validated = model_validate(existing_args)
+            from openminion.modules.tool.runtime.argument_repair import (
+                accepted_tool_args,
+            )
+
             existing_args = accepted_tool_args(
-                model_validate(existing_args),
+                validated,
                 existing_args,
                 input_keys=known_keys or None,
             )
