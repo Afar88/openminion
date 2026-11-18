@@ -229,7 +229,9 @@ def _nested_models_accept_input_keys(value: Any, seen: set[int]) -> bool:
     if isinstance(value, BaseModel):
         return _model_dump_accepts_input_keys(value, seen)
     if isinstance(value, Mapping):
-        return all(_nested_models_accept_input_keys(item, seen) for item in value.values())
+        return all(
+            _nested_models_accept_input_keys(item, seen) for item in value.values()
+        )
     if isinstance(value, (list, tuple, set, frozenset)):
         return all(_nested_models_accept_input_keys(item, seen) for item in value)
     return True
